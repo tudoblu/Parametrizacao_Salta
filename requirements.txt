@@ -1,0 +1,13 @@
+streamlit
+folium
+sympy
+pandas
+Pillow
+pingouin
+folium
+matplotlib
+io
+mplstereonet
+seaborn
+pingouin
+scipy

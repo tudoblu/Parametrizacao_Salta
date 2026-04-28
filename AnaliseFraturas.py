@@ -63,85 +63,112 @@ def carregar_e_processar_dados(caminho_arquivo: str):
     delimitadores = [';', ',', '\t']
     df = None
 
+    # Tenta carregar o arquivo com diferentes codificações e delimitadores
     for encoding in codificacoes:
-        for sep in delimitadores:
+        for delimiter in delimitadores:
             try:
-                df = pd.read_csv(caminho_arquivo, encoding=encoding, sep=sep)
-                break
-            except (UnicodeDecodeError, pd.errors.ParserError):
+                df = pd.read_csv(caminho_arquivo, encoding=encoding, delimiter=delimiter)
+                # Verifica se o carregamento foi bem-sucedido (ex: se encontrou colunas esperadas)
+                if 'DipDir' in df.columns and 'Dip' in df.columns:
+                    break # Sai dos loops se o carregamento for bem-sucedido
+            except Exception:
                 continue
-        if df is not None:
+        if df is not None and 'DipDir' in df.columns and 'Dip' in df.columns:
             break
 
     if df is None:
-        raise ValueError("Não foi possível carregar o CSV com as combinações testadas.")
+        st.error("Não foi possível carregar o arquivo CSV com as codificações e delimitadores testados.")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
-    # --- Normalizar nomes de colunas problemáticos de encoding ---
-    df.rename(columns={
-        "Espa amento": "Espacamento",
-    }, inplace=True)
+    # --- INÍCIO DAS CORREÇÕES ---
 
-    # --- Pré-processamento comum (ajuste de confinamento) ---
-    if {'Espessura da camada', 'Altura da estrutura'}.issubset(df.columns):
-        df['Espessura da camada'] = pd.to_numeric(df['Espessura da camada'], errors='coerce')
-        df['Altura da estrutura'] = pd.to_numeric(df['Altura da estrutura'], errors='coerce')
+    # 1. Limpeza dos nomes das colunas: remove espaços em branco e caracteres especiais
+    df.columns = df.columns.str.strip()
+    df.columns = df.columns.str.replace(' ', '_')
+    df.columns = df.columns.str.replace('Ť‹o', 'cao') # Corrige 'DissoluŤ‹o' para 'Dissolucao'
+    df.columns = df.columns.str.replace('‡rios', 'arios') # Corrige 'Coment‡rios' para 'Comentarios'
+    df.columns = df.columns.str.replace('N‹o', 'Nao') # Corrige 'N‹o subordinada'
+    df.columns = df.columns.str.replace('Espa_amento', 'Espacamento') # Ajusta nome da coluna
 
-        # Ajuste para garantir que Espessura da camada não seja menor que Altura da estrutura
-        # E para marcar como "Confinada"
-        cond = df['Espessura da camada'] <= df['Altura da estrutura']
-        df.loc[cond, 'Espessura da camada'] = df.loc[cond, 'Altura da estrutura']
-        df.loc[cond, 'Estrutura confinada'] = 'Confinada'
-        df.loc[~cond, 'Estrutura confinada'] = 'Não Confinada' # Para casos onde a altura é menor que a espessura
-    else:
-        st.warning("Colunas 'Espessura da camada' ou 'Altura da estrutura' não encontradas para ajuste de confinamento.")
-        df['Estrutura confinada'] = 'Não Aplicável' # Adiciona a coluna mesmo que não possa calcular
+    # Renomear colunas para padronização, se existirem
+    # Mapeamento de nomes antigos para novos (ajuste conforme seus dados)
+    col_mapping = {
+        'DipDir': 'DipDir', # Mantém
+        'Dip': 'Dip',       # Mantém
+        'FRAT_SET': 'FRAT_SET',
+        'Preench': 'Preenchimento',
+        'abert_media': 'Abertura_Media',
+        'Coment_rios': 'Comentarios',
+        'Espessura_da_camada': 'Espessura_da_Camada',
+        'Med_Schim': 'Med_Schmidt',
+        'Desv_Pad': 'Desvio_Padrao',
+        'Afloramento': 'Afloramento',
+        'Camada': 'Camada',
+        'Esp_camada_TOTAL': 'Espessura_Camada_Total',
+        'Azimute_acamamento': 'Azimute_Acamamento',
+        'MergulhoAcamamento': 'Mergulho_Acamamento',
+        'Scanline': 'Scanline',
+        'Surf_Dir': 'Surf_Dir',
+        'dia': 'Dia',
+        'ETAPA_CAMPO': 'Etapa_Campo',
+        'nofratura': 'No_Fratura',
+        'Estrutura_confinada': 'Estrutura_Confinada',
+        'Altura_da_estrutura': 'Altura_da_Estrutura',
+        'comentarios_altura': 'Comentarios_Altura',
+        'Dissolucao': 'Dissolucao',
+        'Litofacies': 'Litofacies',
+        'JRC': 'JRC',
+        'No_de_estruturas_medidas': 'No_de_Estruturas_Medidas',
+        'Subtipo': 'Subtipo'
+    }
+    df = df.rename(columns={k: v for k, v in col_mapping.items() if k in df.columns})
 
-    # Conversões para numérico
-    colunas_numericas = [
-        'abert media', 'Altura da estrutura', 'Espacamento',
-        'DipDir', 'Azimute acamamento', 'Espessura da camada',
-        'JRC', 'Dip' # 'Dip' é crucial para estereogramas
-    ]
-    for col in colunas_numericas:
+
+    # 2. Pré-processamento das colunas 'DipDir' e 'Dip'
+    # Converte para numérico, tratando erros e substituindo vírgulas por pontos
+    for col in ['DipDir', 'Dip']:
         if col in df.columns:
+            # Substitui vírgulas por pontos antes de converter para numérico
+            df[col] = df[col].astype(str).str.replace(',', '.', regex=False)
             df[col] = pd.to_numeric(df[col], errors='coerce')
-        else:
-            st.warning(f"Coluna '{col}' não encontrada no CSV. Gráficos que dependem dela podem não funcionar.")
+            # Remove linhas onde DipDir ou Dip são NaN após a conversão
+            df = df.dropna(subset=[col])
+            # Garante que os valores estejam dentro dos limites esperados
+            if col == 'DipDir':
+                df = df[(df[col] >= 0) & (df[col] <= 360)]
+            elif col == 'Dip':
+                df = df[(df[col] >= 0) & (df[col] <= 90)]
 
-    # Garantir que 'FRAT SET' e 'Subtipo' são strings para mapeamento de cores/filtros
-    if 'FRAT SET' in df.columns:
-        df['FRAT SET'] = df['FRAT SET'].astype(str)
-    else:
-        st.warning("Coluna 'FRAT SET' não encontrada. As fraturas não serão coloridas por FRAT SET.")
+    # 3. Conversão de 'DipDir' e 'Dip' para o formato Right-Hand Rule (RHR)
+    # mplstereonet espera strike e dip, onde strike é a direção do plano e dip é o mergulho.
+    # Se DipDir é a direção de mergulho, precisamos convertê-lo para strike RHR.
+    if 'DipDir' in df.columns and 'Dip' in df.columns:
+        # Calcula o strike (direção do plano) a partir da direção de mergulho (DipDir)
+        # O strike é perpendicular à direção de mergulho.
+        # Convenção RHR: se o plano mergulha para leste (ex: 90), o strike é N-S (0 ou 180).
+        # Se mergulha para 90, o strike pode ser 0 (N) ou 180 (S).
+        # Para RHR, o strike é tal que, olhando na direção do strike, o plano mergulha para a direita.
+        # Ex: DipDir 90 (mergulha para Leste) -> Strike 0 (N) com mergulho para Leste.
+        # Strike = DipDir - 90 (e ajusta para 0-360)
+        df['Strike_RHR'] = (df['DipDir'] - 90) % 360
+        df['Dip_RHR'] = df['Dip'] # O mergulho (Dip) geralmente não muda
 
+    # --- FIM DAS CORREÇÕES ---
+
+    # Outros pré-processamentos existentes
+    # Preencher valores ausentes em 'Subtipo' para evitar erros em filtros
     if 'Subtipo' in df.columns:
-        df['Subtipo'] = df['Subtipo'].astype(str)
-    else:
-        st.warning("Coluna 'Subtipo' não encontrada. Filtros por VEIO/JUNTA podem não funcionar.")
+        df['Subtipo'] = df['Subtipo'].fillna('Nao_Especificado')
+        df['Subtipo'] = df['Subtipo'].astype(str).str.upper().str.strip()
 
-    # Cria coluna de strike (RHR) para estereograma, se DipDir existir
-    def _strike_rhr(dip_direction):
-        if pd.isnull(dip_direction):
-            return np.nan
-        strike = dip_direction - 90
-        strike = strike % 360
-        if strike < 0:
-            strike += 360
-        return strike
-
-    if 'DipDir' in df.columns:
-        df['Strike_RHR'] = df['DipDir'].apply(_strike_rhr)
-    else:
-        st.warning("Coluna 'DipDir' não encontrada. 'Strike_RHR' não será calculada.")
-
-    # Subsets
+    # Criação dos subsets df_juntas e df_veios
     df_juntas = df[df['Subtipo'].str.contains('JUNTA', na=False)].copy() if 'Subtipo' in df.columns else pd.DataFrame()
-    df_veios  = df[df['Subtipo'].str.contains('VEIO',  na=False)].copy() if 'Subtipo' in df.columns else pd.DataFrame()
+    df_veios = df[df['Subtipo'].str.contains('VEIO', na=False)].copy() if 'Subtipo' in df.columns else pd.DataFrame()
 
     # Filtro para veios confinados (usado em vários gráficos)
     df_veios_confinados = df_veios.copy()
-    if 'Estrutura confinada' in df_veios_confinados.columns:
-        df_veios_confinados = df_veios_confinados[df_veios_confinados['Estrutura confinada'] == 'Confinada']
+    if 'Estrutura_Confinada' in df_veios_confinados.columns:
+        df_veios_confinados = df_veios_confinados[df_veios_confinados['Estrutura_Confinada'] == 'Confinada']
 
     return df, df_juntas, df_veios, df_veios_confinados
 

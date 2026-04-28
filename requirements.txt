@@ -5,3 +5,5 @@ Pillow
 matplotlib
 mplstereonet
 seaborn
+pingouin
+streamlit_folium

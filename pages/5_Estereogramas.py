@@ -75,10 +75,9 @@ fig = plotar_estereograma_e_rose(df_juntas, df_veios,
                                 afloramento_selecionado,
                                 camada_selecionada)
 	# ----- Gera e exibe o gráfico -----
-	fig = plotar_estereograma_e_rose(df_juntas, df_veios,
+fig = plotar_estereograma_e_rose(df_juntas, df_veios,
 									afloramento_selecionado,
 									camada_selecionada)
-	st.pyplot(fig)
+st.pyplot(fig)
 	
-	st.markdown("---")
-		
+st.markdown("---")

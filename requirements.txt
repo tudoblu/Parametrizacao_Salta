@@ -1,0 +1,10 @@
+streamlit
+folium
+pandas
+Pillow
+matplotlib
+mplstereonet
+seaborn
+pingouin
+streamlit_folium
+openpyxl

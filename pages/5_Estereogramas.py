@@ -55,7 +55,25 @@ else:
 		'Selecione a Camada:',
 		options=camadas_disponiveis_para_dropdown
 	)
-	
+	# Adicione estas linhas para depuração:
+st.write("--- Debugging Data for Stereograms ---")
+st.write("df_juntas head:", df_juntas.head())
+st.write("df_juntas info:", df_juntas.info())
+st.write("df_juntas nulos:", df_juntas.isnull().sum())
+st.write("df_veios head:", df_veios.head())
+st.write("df_veios info:", df_veios.info())
+st.write("df_veios nulos:", df_veios.isnull().sum())
+
+# Se você souber os nomes exatos das colunas de strike e dip:
+# st.write("all_strikes_for_density head:", all_strikes_for_density.head())
+# st.write("all_dips_for_density head:", all_dips_for_density.head())
+# st.write("all_dips_for_density min/max:", all_dips_for_density.min(), all_dips_for_density.max())
+# st.write("all_strikes_for_density min/max:", all_strikes_for_density.min(), all_strikes_for_density.max())
+st.write("--- End Debugging ---")
+
+fig = plotar_estereograma_e_rose(df_juntas, df_veios,
+                                afloramento_selecionado,
+                                camada_selecionada)
 	# ----- Gera e exibe o gráfico -----
 	fig = plotar_estereograma_e_rose(df_juntas, df_veios,
 									afloramento_selecionado,

@@ -7,3 +7,4 @@ mplstereonet
 seaborn
 pingouin
 streamlit_folium
+openpyxl

@@ -1006,6 +1006,13 @@ def plotar_estereograma_e_rose(df_juntas, df_veios, afloramento_selecionado, cam
         return fig
 
     # Contorno de densidade (combinando juntas e veios)
+st.write("DEBUG: Tipo de all_strikes_for_density:", type(all_strikes_for_density))
+st.write("DEBUG: Dtype de all_strikes_for_density:", all_strikes_for_density.dtype)
+st.write("DEBUG: Tem NaN em all_strikes_for_density?", all_strikes_for_density.isnull().any())
+st.write("DEBUG: Tipo de all_dips_for_density:", type(all_dips_for_density))
+st.write("DEBUG: Dtype de all_dips_for_density:", all_dips_for_density.dtype)
+st.write("DEBUG: Tem NaN em all_dips_for_density?", all_dips_for_density.isnull().any())
+
     min_density_level = 2 # Nível mínimo de densidade em % para começar a colorir
     levels = np.arange(min_density_level, 100, 1) # Começa de 10% e vai de 2 em 2 até 100%
     all_strikes_for_density = pd.concat([df_final_juntas['Strike_RHR'], df_final_veios['Strike_RHR']])

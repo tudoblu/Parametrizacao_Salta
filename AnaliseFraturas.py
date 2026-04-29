@@ -19,7 +19,7 @@ from utils import set_background
 # para isso, mas para simplificar, vamos definir diretamente aqui.
 # Certifique-se de que 'dados_gerais.csv' está no mesmo diretório do app.py
 # ou forneça o caminho completo/relativo correto.
-CAMINHO_CSV = 'dados_gerais.csv' # <--- AJUSTE ESTE CAMINHO SE NECESSÁRIO
+CAMINHO_CSV = 'd1a_2a_3a_4a_6a_Etapas_24_08_CONSISTIDO.csv' # <--- AJUSTE ESTE CAMINHO SE NECESSÁRIO
 
 # -----------------------------------------------------------------
 # 1 – CONFIGURAÇÕES INICIAIS DO STREAMLIT

@@ -254,6 +254,14 @@ def grafico_tamanho_por_litofacies(df_juntas):
     plt.tight_layout()
     return fig
 
+import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+
+# Certifique-se de que mplstereonet está importado se for usado em outras partes de graficos.py
+# import mplstereonet
+
 def grafico_scanlines(df_completo, afloramento_selecionado, camada_selecionada):
     """
     Gera o gráfico de scanlines para o afloramento e camada selecionados.
@@ -292,15 +300,15 @@ def grafico_scanlines(df_completo, afloramento_selecionado, camada_selecionada):
         ax.axis('off')
         return fig, df_filtrado
 
-    # Certificar-se de que 'Posicao_Scanline' e 'Comprimento_Scanline' são numéricos
-    df_filtrado['Posicao_Scanline'] = pd.to_numeric(df_filtrado['Posicao_Scanline'], errors='coerce')
-    df_filtrado['Comprimento_Scanline'] = pd.to_numeric(df_filtrado['Comprimento_Scanline'], errors='coerce')
+    # Certificar-se de que 'No_Fratura' e 'Altura_da_Estrutura' são numéricos
+    df_filtrado['No_Fratura'] = pd.to_numeric(df_filtrado['No_Fratura'], errors='coerce')
+    df_filtrado['Altura_da_Estrutura'] = pd.to_numeric(df_filtrado['Altura_da_Estrutura'], errors='coerce')
 
     # Remover linhas com valores NaN após a conversão
-    df_filtrado.dropna(subset=['Posicao_Scanline', 'Comprimento_Scanline'], inplace=True)
+    df_filtrado.dropna(subset=['No_Fratura', 'Altura_da_Estrutura'], inplace=True)
 
     if df_filtrado.empty:
-        st.warning("Dados de 'Posicao_Scanline' ou 'Comprimento_Scanline' inválidos após limpeza.")
+        st.warning("Dados de 'No_Fratura' ou 'Altura_da_Estrutura' inválidos após limpeza.")
         fig, ax = plt.subplots(figsize=(10, 6))
         ax.text(0.5, 0.5, "Dados numéricos inválidos para exibir.",
                 horizontalalignment='center', verticalalignment='center', transform=ax.transAxes, fontsize=12)
@@ -310,67 +318,13 @@ def grafico_scanlines(df_completo, afloramento_selecionado, camada_selecionada):
     # Criar o gráfico de scanlines
     fig, ax = plt.subplots(figsize=(12, 6))
 
-    # Plotar cada scanline como uma linha horizontal
-    # A posição da scanline no eixo Y pode ser arbitrária, vamos usar um valor fixo
-    # para cada scanline única ou um índice
     scanlines_unicas = df_filtrado['Scanline'].unique()
     for i, scanline_id in enumerate(scanlines_unicas):
         df_scanline = df_filtrado[df_filtrado['Scanline'] == scanline_id]
 
-        # Se 'Posicao_Scanline' representa a posição ao longo da scanline
-        # e 'Comprimento_Scanline' o comprimento da feição
-        # podemos plotar a feição como uma linha horizontal em uma posição Y arbitrária
-        # ou usar 'Posicao_Scanline' como X e 'Comprimento_Scanline' como o tamanho do marcador
-
-        # Para um gráfico de "scanlines" que mostra a distribuição de feições ao longo de uma linha
-        # podemos plotar a posição da feição na scanline (X) e o comprimento (Y)
-        # Ou, se a intenção é visualizar as feições ao longo de *várias* scanlines,
-        # podemos plotar cada scanline em uma "faixa" diferente no eixo Y.
-
-        # Vamos tentar uma abordagem onde cada scanline é uma "faixa" no eixo Y
-        # e as feições são pontos ou barras dentro dessa faixa.
-        # Para simplificar, vamos plotar a posição da feição ao longo da scanline
-        # e o comprimento como o tamanho do marcador ou cor.
-
-        # Abordagem 1: Plotar cada feição como um ponto, com Y sendo a scanline
-        # ax.scatter(df_scanline['Posicao_Scanline'], [i] * len(df_scanline),
-        #            s=df_scanline['Comprimento_Scanline'] * 5, # Tamanho proporcional ao comprimento
-        #            alpha=0.7, label=f'Scanline {scanline_id}')
-
-        # Abordagem 2: Plotar a distribuição de comprimentos ao longo da scanline
-        # Isso é mais comum para gráficos de scanline.
-        # Vamos usar um histograma ou densidade se houver muitos dados,
-        # ou simplesmente plotar a posição e o comprimento.
-
-        # Para um gráfico de "scanlines" que mostra a distribuição de feições ao longo de uma linha
-        # podemos plotar a posição da feição na scanline (X) e o comprimento (Y)
-        # Ou, se a intenção é visualizar as feições ao longo de *várias* scanlines,
-        # podemos plotar cada scanline em uma "faixa" diferente no eixo Y.
-
-        # Vamos tentar uma abordagem onde cada scanline é uma "faixa" no eixo Y
-        # e as feições são pontos ou barras dentro dessa faixa.
-        # Para simplificar, vamos plotar a posição da feição ao longo da scanline
-        # e o comprimento como o tamanho do marcador ou cor.
-
-        # Abordagem 1: Plotar cada feição como um ponto, com Y sendo a scanline
-        # ax.scatter(df_scanline['Posicao_Scanline'], [i] * len(df_scanline),
-        #            s=df_scanline['Comprimento_Scanline'] * 5, # Tamanho proporcional ao comprimento
-        #            alpha=0.7, label=f'Scanline {scanline_id}')
-
-        # Abordagem 2: Plotar a distribuição de comprimentos ao longo da scanline
-        # Isso é mais comum para gráficos de scanline.
-        # Vamos usar um histograma ou densidade se houver muitos dados,
-        # ou simplesmente plotar a posição e o comprimento.
-
-        # Plotar cada feição como uma linha horizontal em sua respectiva "Posicao_Scanline"
-        # e o comprimento como o tamanho da linha.
-        # Para visualização, podemos empilhar as scanlines verticalmente.
-        # Vamos usar a Posicao_Scanline como o centro da feição e o Comprimento_Scanline para estender.
-
-        # Para cada feição na scanline
         for idx, row in df_scanline.iterrows():
-            posicao = row['Posicao_Scanline']
-            comprimento = row['Comprimento_Scanline']
+            posicao = row['No_Fratura'] # Usando 'No_Fratura' como posição
+            comprimento = row['Altura_da_Estrutura'] # Usando 'Altura_da_Estrutura' como comprimento
 
             # Desenha uma linha horizontal representando a feição
             # O eixo Y pode ser o índice da scanline para separá-las visualmente
@@ -382,7 +336,7 @@ def grafico_scanlines(df_completo, afloramento_selecionado, camada_selecionada):
 
     ax.set_yticks(np.arange(len(scanlines_unicas)))
     ax.set_yticklabels([f'Scanline {s}' for s in scanlines_unicas])
-    ax.set_xlabel('Posição ao longo da Scanline')
+    ax.set_xlabel('Número da Fratura (Posição ao longo da Scanline)') # Atualiza o label do eixo X
     ax.set_ylabel('Scanline ID')
     ax.set_title(f'Visualização de Scanlines - {afloramento_selecionado} ({camada_selecionada})')
     ax.grid(True, linestyle='--', alpha=0.7)

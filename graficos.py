@@ -280,7 +280,7 @@ def grafico_scanlines(df_juntas):
     plt.tight_layout()
     return fig
 
-ddef plotar_estereograma_e_rose(df_juntas, df_veios, afloramento_selecionado, camada_selecionada):
+def plotar_estereograma_e_rose(df_juntas, df_veios, afloramento_selecionado, camada_selecionada):
     """
     Plota estereogramas e diagramas de rosas para juntas e veios.
     """

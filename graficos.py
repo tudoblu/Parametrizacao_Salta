@@ -191,33 +191,49 @@ def grafico_abertura_por_litofacies(df_juntas):
     plt.tight_layout()
     return fig
 
-def grafico_abertura_por_litofacies_camada(df_juntas):
+def grafico_abertura_por_litofacies(df, litofacies_selecionada):
     """
-    Gera um boxplot da abertura média por litofácies e camada.
+    Gera um boxplot da abertura média por litofácies e camada,
+    filtrando pela litofácies selecionada se não for 'Todas'.
     """
-    if df_juntas.empty or 'Litofacies' not in df_juntas.columns or 'Camada' not in df_juntas.columns or 'abert media' not in df_juntas.columns:
-        st.warning("Não há dados suficientes para gerar o gráfico de Abertura por Litofácies e Camada.")
+    # Renomear 'abert media' para 'Abertura_Media' se for o caso,
+    # ou usar o nome correto da coluna de abertura média no seu DataFrame.
+    # Pelo df.info() que você enviou, a coluna é 'Abertura_Media'.
+    coluna_abertura = 'Abertura_Media'
+
+    # Verificar se as colunas necessárias existem
+    if df.empty or 'Litofacies' not in df.columns or 'Camada' not in df.columns or coluna_abertura not in df.columns:
+        st.warning("Não há dados suficientes ou colunas necessárias para gerar o gráfico de Abertura por Litofácies e Camada.")
+        return plt.figure()
+
+    df_plot = df.copy()
+
+    # Filtrar por litofácies se uma específica for selecionada
+    if litofacies_selecionada and litofacies_selecionada != 'Todas':
+        df_plot = df_plot[df_plot['Litofacies'] == litofacies_selecionada]
+
+    if df_plot.empty:
+        st.warning(f"Nenhum dado encontrado para a Litofácies selecionada: {litofacies_selecionada}.")
         return plt.figure()
 
     fig, ax = plt.subplots(figsize=(14, 8))
     sns.boxplot(
         x='Litofacies',
-        y='abert media',
+        y=coluna_abertura, # Usar o nome correto da coluna
         hue='Camada',
-        data=df_juntas,
+        data=df_plot,
         ax=ax,
         palette='tab10',
-        order=df_juntas['Litofacies'].value_counts().index
+        order=df_plot['Litofacies'].value_counts().index # Garante que a ordem seja consistente
     )
     ax.set_xlabel("Litofácies")
     ax.set_ylabel("Abertura Média (mm)")
-    ax.set_title("Distribuição da Abertura Média por Litofácies e Camada")
+    ax.set_title(f"Distribuição da Abertura Média por Litofácies e Camada (Litofácies: {litofacies_selecionada})")
     ax.tick_params(axis='x', rotation=45)
     ax.legend(title='Camada', bbox_to_anchor=(1.05, 1), loc='upper left')
     ax.grid(True, linestyle='--', alpha=0.7)
     plt.tight_layout()
     return fig
-
 def grafico_tamanho_por_litofacies(df_juntas):
     """
     Gera um boxplot da 'Altura da estrutura' por litofácies.
@@ -253,11 +269,6 @@ def grafico_tamanho_por_litofacies(df_juntas):
     ax.grid(True, linestyle='--', alpha=0.7)
     plt.tight_layout()
     return fig
-
-import streamlit as st
-import pandas as pd
-import matplotlib.pyplot as plt
-import numpy as np
 
 # Certifique-se de que mplstereonet está importado se for usado em outras partes de graficos.py
 # import mplstereonet
@@ -408,9 +419,15 @@ def plotar_estereograma_e_rose(df_juntas, df_veios, afloramento_selecionado, cam
     ax_stereo.set_title(f'Estereograma - {afloramento_selecionado} ({camada_selecionada})')
 
     if not df_juntas_filtered.empty:
-        ax_stereo.pole(df_juntas_filtered['Strike_RHR'], df_juntas_filtered['Dip'], 'o', markersize=5, color='blue', label='Juntas')
+        # CONVERTER PARA ARRAYS ESCRITOS PARA EVITAR ValueError
+        juntas_strike = df_juntas_filtered['Strike_RHR'].values.copy()
+        juntas_dip = df_juntas_filtered['Dip'].values.copy()
+        ax_stereo.pole(juntas_strike, juntas_dip, 'o', markersize=5, color='blue', label='Juntas')
     if not df_veios_filtered.empty:
-        ax_stereo.pole(df_veios_filtered['Strike_RHR'], df_veios_filtered['Dip'], '^', markersize=5, color='red', label='Veios')
+        # CONVERTER PARA ARRAYS ESCRITOS PARA EVITAR ValueError
+        veios_strike = df_veios_filtered['Strike_RHR'].values.copy()
+        veios_dip = df_veios_filtered['Dip'].values.copy()
+        ax_stereo.pole(veios_strike, veios_dip, '^', markersize=5, color='red', label='Veios')
 
     ax_stereo.grid()
     ax_stereo.legend()

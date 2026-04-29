@@ -280,65 +280,94 @@ def grafico_scanlines(df_juntas):
     plt.tight_layout()
     return fig
 
-def plotar_estereograma_e_rose(df, tipo_plot='juntas', titulo="Estereograma e Diagrama de Rosas"):
+ddef plotar_estereograma_e_rose(df_juntas, df_veios, afloramento_selecionado, camada_selecionada):
     """
-    Plota um estereograma de polos e um diagrama de rosas para dados de orientação.
-    Adiciona depuração para verificar os dados antes da plotagem.
+    Plota estereogramas e diagramas de rosas para juntas e veios.
     """
-    if df.empty:
-        st.warning(f"DataFrame vazio para plotar {titulo}.")
-        return plt.figure()
+    # --- DEBUG: plotar_estereograma_e_rose ---
+    st.write("--- DEBUG: plotar_estereograma_e_rose ---")
+    st.write(f"Tipo de df_juntas: {type(df_juntas)}")
+    if isinstance(df_juntas, pd.DataFrame):
+        st.write(f"df_juntas está vazio? {df_juntas.empty}")
+        st.write(f"Colunas de df_juntas: {df_juntas.columns.tolist()}")
+        st.write("Primeiras 5 linhas de df_juntas:")
+        st.write(df_juntas.head())
 
-    # Garante que as colunas necessárias existam e sejam numéricas
-    col_dipdir = 'DipDir'
-    col_dip = 'Dip'
-    col_strike = 'Strike_RHR' # Usamos Strike_RHR para o diagrama de rosas
+    st.write(f"Tipo de df_veios: {type(df_veios)}")
+    if isinstance(df_veios, pd.DataFrame):
+        st.write(f"df_veios está vazio? {df_veios.empty}")
+        st.write(f"Colunas de df_veios: {df_veios.columns.tolist()}")
+        st.write("Primeiras 5 linhas de df_veios:")
+        st.write(df_veios.head())
 
-    if not all(col in df.columns for col in [col_dipdir, col_dip, col_strike]):
-        st.error(f"Colunas '{col_dipdir}', '{col_dip}' ou '{col_strike}' não encontradas no DataFrame para {titulo}.")
-        return plt.figure()
+    st.write(f"Afloramento selecionado: {afloramento_selecionado}")
+    st.write(f"Camada selecionada: {camada_selecionada}")
+    st.write("--- FIM DEBUG: plotar_estereograma_e_rose ---")
 
-    # Converte para numérico e trata erros, preenchendo com NaN
-    df_plot = df.copy()
-    df_plot[col_dipdir] = pd.to_numeric(df_plot[col_dipdir], errors='coerce')
-    df_plot[col_dip] = pd.to_numeric(df_plot[col_dip], errors='coerce')
-    df_plot[col_strike] = pd.to_numeric(df_plot[col_strike], errors='coerce')
+    # Certifique-se de que 'Dip' e 'Strike_RHR' são numéricos e não nulos
+    df_juntas_filtered = df_juntas.dropna(subset=['Dip', 'Strike_RHR']).copy()
+    df_veios_filtered = df_veios.dropna(subset=['Dip', 'Strike_RHR']).copy()
 
-    # Remove linhas com NaN nas colunas críticas para plotagem
-    df_plot = df_plot.dropna(subset=[col_dipdir, col_dip, col_strike])
+    # Converter para numérico, forçando erros para NaN
+    df_juntas_filtered['Dip'] = pd.to_numeric(df_juntas_filtered['Dip'], errors='coerce')
+    df_juntas_filtered['Strike_RHR'] = pd.to_numeric(df_juntas_filtered['Strike_RHR'], errors='coerce')
+    df_veios_filtered['Dip'] = pd.to_numeric(df_veios_filtered['Dip'], errors='coerce')
+    df_veios_filtered['Strike_RHR'] = pd.to_numeric(df_veios_filtered['Strike_RHR'], errors='coerce')
 
-    if df_plot.empty:
-        st.warning(f"Após a limpeza, não há dados válidos de orientação para plotar {titulo}.")
-        return plt.figure()
+    # Remover NaNs que podem ter surgido após a conversão
+    df_juntas_filtered = df_juntas_filtered.dropna(subset=['Dip', 'Strike_RHR'])
+    df_veios_filtered = df_veios_filtered.dropna(subset=['Dip', 'Strike_RHR'])
 
-    # Depuração: Verifique os dados antes de passar para mplstereonet
-    st.write(f"--- Depuração para {titulo} ---")
-    st.write(f"Número de pontos após limpeza: {len(df_plot)}")
-    st.write(f"Valores de {col_dipdir} (min/max): {df_plot[col_dipdir].min()}/{df_plot[col_dipdir].max()}")
-    st.write(f"Valores de {col_dip} (min/max): {df_plot[col_dip].min()}/{df_plot[col_dip].max()}")
-    st.write(f"Valores de {col_strike} (min/max): {df_plot[col_strike].min()}/{df_plot[col_strike].max()}")
-    st.write(f"Exemplo de dados de orientação (primeiras 5 linhas):\n{df_plot[[col_dipdir, col_dip, col_strike]].head()}")
-    st.write("---------------------------------")
+    # --- DEBUG: Verificação de dados após limpeza ---
+    st.write(f"DEBUG: df_juntas_filtered após limpeza: {len(df_juntas_filtered)} linhas")
+    if not df_juntas_filtered.empty:
+        st.write(f"DEBUG: Dip min/max (juntas): {df_juntas_filtered['Dip'].min()}/{df_juntas_filtered['Dip'].max()}")
+        st.write(f"DEBUG: Strike_RHR min/max (juntas): {df_juntas_filtered['Strike_RHR'].min()}/{df_juntas_filtered['Strike_RHR'].max()}")
+    st.write(f"DEBUG: df_veios_filtered após limpeza: {len(df_veios_filtered)} linhas")
+    if not df_veios_filtered.empty:
+        st.write(f"DEBUG: Dip min/max (veios): {df_veios_filtered['Dip'].min()}/{df_veios_filtered['Dip'].max()}")
+        st.write(f"DEBUG: Strike_RHR min/max (veios): {df_veios_filtered['Strike_RHR'].min()}/{df_veios_filtered['Strike_RHR'].max()}")
+    # --- FIM DEBUG ---
 
-    # Estereograma
+    if df_juntas_filtered.empty and df_veios_filtered.empty:
+        fig, ax = plt.subplots(figsize=(10, 10))
+        ax.text(0.5, 0.5, "Nenhum dado de juntas ou veios para plotar estereograma.",
+                horizontalalignment='center', verticalalignment='center', transform=ax.transAxes, fontsize=12)
+        ax.axis('off')
+        return fig
+
     fig = plt.figure(figsize=(12, 6))
-    ax1 = fig.add_subplot(121, projection='stereonet')
+    gs = fig.add_gridspec(1, 2) # 1 linha, 2 colunas para estereograma e rosa
 
-    # Plotar polos
-    ax1.pole(df_plot[col_dipdir], df_plot[col_dip], 'o', markersize=5, color='blue', alpha=0.6)
-    ax1.grid()
-    ax1.set_title("Estereograma de Polos")
+    # --- Estereograma ---
+    ax_stereo = fig.add_subplot(gs[0, 0], projection='stereonet')
+    ax_stereo.set_title(f'Estereograma - {afloramento_selecionado} ({camada_selecionada})')
 
-    # Diagrama de Rosas
-    ax2 = fig.add_subplot(122, projection='rose', frame_on=False)
-    bins = np.arange(0, 361, 10) # Bins de 10 graus
-    ax2.hist(df_plot[col_strike], bins=bins, edgecolor='black', linewidth=0.5, alpha=0.7)
-    ax2.set_theta_zero_location('N')
-    ax2.set_theta_direction(-1) # Sentido horário
-    ax2.set_title("Diagrama de Rosas (Strike)")
+    if not df_juntas_filtered.empty:
+        ax_stereo.pole(df_juntas_filtered['Strike_RHR'], df_juntas_filtered['Dip'], 'o', markersize=5, color='blue', label='Juntas')
+    if not df_veios_filtered.empty:
+        ax_stereo.pole(df_veios_filtered['Strike_RHR'], df_veios_filtered['Dip'], '^', markersize=5, color='red', label='Veios')
 
-    plt.suptitle(titulo, fontsize=16)
-    plt.tight_layout(rect=[0, 0.03, 1, 0.95]) # Ajusta layout para o suptitle
+    ax_stereo.grid()
+    ax_stereo.legend()
+
+    # --- Diagrama de Rosas ---
+    ax_rose = fig.add_subplot(gs[0, 1], projection='polar')
+    ax_rose.set_title(f'Diagrama de Rosas - {afloramento_selecionado} ({camada_selecionada})')
+
+    # Para o diagrama de rosas, geralmente usamos o Strike (direção)
+    # Vamos usar o Strike_RHR para as direções
+    if not df_juntas_filtered.empty:
+        ax_rose.rose(df_juntas_filtered['Strike_RHR'], bins=18, edgecolor='black', linewidth=0.5, facecolor='blue', alpha=0.6, label='Juntas')
+    if not df_veios_filtered.empty:
+        ax_rose.rose(df_veios_filtered['Strike_RHR'], bins=18, edgecolor='black', linewidth=0.5, facecolor='red', alpha=0.6, label='Veios')
+
+    ax_rose.set_theta_zero_location('N') # Norte para cima
+    ax_rose.set_theta_direction(-1) # Sentido horário
+    ax_rose.set_rticks([]) # Remove os ticks radiais
+    ax_rose.legend(loc='upper left', bbox_to_anchor=(1.05, 1))
+
+    plt.tight_layout()
     return fig
 
 def plotar_p21_por_afloramento(df_juntas, df_veios, tipo_estrutura='Juntas'):

@@ -111,6 +111,7 @@ def carregar_e_processar_dados(caminho_arquivo: str):
         'JRC_Roughness': 'JRC',
         'Espessura_da_camada': 'Espessura da camada',
         'Altura_da_estrutura': 'Altura da estrutura',
+        'Strike': 'Strike_RHR',
         'Surf_Dir': 'Surf Dir',
         'Strike_RHR': 'DipDir'
     }

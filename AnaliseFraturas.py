@@ -11,9 +11,15 @@ import numpy as np
 import io
 import os
 
+# Importa a função set_background do seu módulo utils
 from utils import set_background
 
-set_background("Aflora.png", opacity=0.4)
+# Define o caminho para o arquivo CSV de dados.
+# É uma boa prática usar uma variável de ambiente ou um arquivo de configuração
+# para isso, mas para simplificar, vamos definir diretamente aqui.
+# Certifique-se de que 'dados_gerais.csv' está no mesmo diretório do app.py
+# ou forneça o caminho completo/relativo correto.
+CAMINHO_CSV = 'dados_gerais.csv' # <--- AJUSTE ESTE CAMINHO SE NECESSÁRIO
 
 # -----------------------------------------------------------------
 # 1 – CONFIGURAÇÕES INICIAIS DO STREAMLIT
@@ -23,6 +29,9 @@ st.set_page_config(
     page_icon="📊",
     layout="wide"
 )
+
+# Aplica o background
+set_background("Aflora.png", opacity=0.4)
 
 st.title("Dashboard de Análise de Fraturas - Embalse Cabra Corral - SALTA,Argentina")
 st.markdown(
@@ -97,105 +106,104 @@ def carregar_e_processar_dados(caminho_arquivo: str):
         'Dip': 'Dip',       # Mantém
         'FRAT_SET': 'FRAT_SET',
         'Preench': 'Preenchimento',
-        'abert_media': 'Abertura_Media',
-        'Coment_rios': 'Comentarios',
-        'Espessura_da_camada': 'Espessura_da_Camada',
-        'Med_Schim': 'Med_Schmidt',
-        'Desv_Pad': 'Desvio_Padrao',
-        'Afloramento': 'Afloramento',
-        'Camada': 'Camada',
-        'Esp_camada_TOTAL': 'Espessura_Camada_Total',
-        'Azimute_acamamento': 'Azimute_Acamamento',
-        'MergulhoAcamamento': 'Mergulho_Acamamento',
-        'Scanline': 'Scanline',
-        'Surf_Dir': 'Surf_Dir',
-        'dia': 'Dia',
-        'ETAPA_CAMPO': 'Etapa_Campo',
-        'nofratura': 'No_Fratura',
-        'Estrutura_confinada': 'Estrutura_Confinada',
-        'Altura_da_estrutura': 'Altura_da_Estrutura',
-        'comentarios_altura': 'Comentarios_Altura',
-        'Dissolucao': 'Dissolucao',
-        'Litofacies': 'Litofacies',
-        'JRC': 'JRC',
-        'No_de_estruturas_medidas': 'No_de_Estruturas_Medidas',
-        'Subtipo': 'Subtipo'
+        'Tipo_de_fratura': 'Subtipo', # Renomeia para 'Subtipo'
+        'Abertura_media': 'abert media', # Renomeia para 'abert media'
+        'JRC_Roughness': 'JRC',
+        'Espessura_da_camada': 'Espessura da camada',
+        'Altura_da_estrutura': 'Altura da estrutura',
+        'Surf_Dir': 'Surf Dir',
+        'Strike_RHR': 'Strike_RHR'
     }
-    df = df.rename(columns={k: v for k, v in col_mapping.items() if k in df.columns})
+    df.rename(columns=col_mapping, inplace=True)
 
-
-    # 2. Pré-processamento das colunas 'DipDir' e 'Dip'
-    # Converte para numérico, tratando erros e substituindo vírgulas por pontos
-    for col in ['DipDir', 'Dip']:
+    # 2. Conversão de tipos de dados
+    colunas_numericas = [
+        'DipDir', 'Dip', 'abert media', 'JRC', 'Espessura da camada',
+        'Altura da estrutura', 'Espacamento', 'Surf Dir', 'Strike_RHR'
+    ]
+    for col in colunas_numericas:
         if col in df.columns:
-            # Substitui vírgulas por pontos antes de converter para numérico
-            df[col] = df[col].astype(str).str.replace(',', '.', regex=False)
             df[col] = pd.to_numeric(df[col], errors='coerce')
-            # Remove linhas onde DipDir ou Dip são NaN após a conversão
-            df = df.dropna(subset=[col])
-            # Garante que os valores estejam dentro dos limites esperados
-            if col == 'DipDir':
-                df = df[(df[col] >= 0) & (df[col] <= 360)]
-            elif col == 'Dip':
-                df = df[(df[col] >= 0) & (df[col] <= 90)]
 
-    # 3. Conversão de 'DipDir' e 'Dip' para o formato Right-Hand Rule (RHR)
-    # mplstereonet espera strike e dip, onde strike é a direção do plano e dip é o mergulho.
-    # Se DipDir é a direção de mergulho, precisamos convertê-lo para strike RHR.
-    if 'DipDir' in df.columns and 'Dip' in df.columns:
-        # Calcula o strike (direção do plano) a partir da direção de mergulho (DipDir)
-        # O strike é perpendicular à direção de mergulho.
-        # Convenção RHR: se o plano mergulha para leste (ex: 90), o strike é N-S (0 ou 180).
-        # Se mergulha para 90, o strike pode ser 0 (N) ou 180 (S).
-        # Para RHR, o strike é tal que, olhando na direção do strike, o plano mergulha para a direita.
-        # Ex: DipDir 90 (mergulha para Leste) -> Strike 0 (N) com mergulho para Leste.
-        # Strike = DipDir - 90 (e ajusta para 0-360)
-        df['Strike_RHR'] = (df['DipDir'] - 90) % 360
-        df['Dip_RHR'] = df['Dip'] # O mergulho (Dip) geralmente não muda
-
-    # --- FIM DAS CORREÇÕES ---
-
-    # Outros pré-processamentos existentes
-    # Preencher valores ausentes em 'Subtipo' para evitar erros em filtros
+    # 3. Preenchimento de valores ausentes (ex: 'FRAT SET' para 'NaN')
+    if 'FRAT_SET' in df.columns:
+        df['FRAT_SET'] = df['FRAT_SET'].fillna('NaN')
     if 'Subtipo' in df.columns:
-        df['Subtipo'] = df['Subtipo'].fillna('Nao_Especificado')
-        df['Subtipo'] = df['Subtipo'].astype(str).str.upper().str.strip()
+        df['Subtipo'] = df['Subtipo'].fillna('NaN')
+    if 'Afloramento' in df.columns:
+        df['Afloramento'] = df['Afloramento'].fillna('NaN')
+    if 'Camada' in df.columns:
+        df['Camada'] = df['Camada'].fillna('NaN')
+    if 'Litofacies' in df.columns:
+        df['Litofacies'] = df['Litofacies'].fillna('NaN')
 
-    # Criação dos subsets df_juntas e df_veios
-    df_juntas = df[df['Subtipo'].str.contains('JUNTA', na=False)].copy() if 'Subtipo' in df.columns else pd.DataFrame()
-    df_veios = df[df['Subtipo'].str.contains('VEIO', na=False)].copy() if 'Subtipo' in df.columns else pd.DataFrame()
+    # 4. Criação de subsets
+    df_juntas = df[df['Subtipo'] == 'JUNTA'].copy()
+    df_veios = df[df['Subtipo'] == 'VEIO'].copy()
 
-    # Filtro para veios confinados (usado em vários gráficos)
-    df_veios_confinados = df_veios.copy()
-    if 'Estrutura_Confinada' in df_veios_confinados.columns:
-        df_veios_confinados = df_veios_confinados[df_veios_confinados['Estrutura_Confinada'] == 'Confinada']
+    # Filtra veios confinados
+    if 'Estrutura_confinada' in df_veios.columns:
+        df_veios_confinados = df_veios[df_veios['Estrutura_confinada'] == 'Confinada'].copy()
+    else:
+        df_veios_confinados = pd.DataFrame() # DataFrame vazio se a coluna não existir
 
     return df, df_juntas, df_veios, df_veios_confinados
 
 # -----------------------------------------------------------------
-# 3 – CARREGAMENTO E PREPARAÇÃO DOS DADOS (executado uma vez)
+# 3 – CARREGAMENTO E ARMAZENAMENTO DE DADOS NO SESSION_STATE
 # -----------------------------------------------------------------
-CAMINHO_CSV = "1a_2a_3a_4a_6a_Etapas_24_08_CONSISTIDO.csv"
 
-try:
-    df_completo, df_juntas, df_veios, df_veios_confinados = carregar_e_processar_dados(CAMINHO_CSV)
-    st.session_state['df_completo'] = df_completo
-    st.session_state['df_juntas'] = df_juntas
-    st.session_state['df_veios'] = df_veios
-    st.session_state['df_veios_confinados'] = df_veios_confinados
-except ValueError as e:
-    st.error(f"Erro ao carregar os dados: {e}. Por favor, verifique o arquivo CSV.")
-    st.stop() # Interrompe a execução do app se os dados não puderem ser carregados
+# Verifica se os DataFrames já estão no session_state para evitar recarregar
+if 'df_completo' not in st.session_state:
+    st.info("Carregando e processando os dados pela primeira vez...")
+    try:
+        df_completo, df_juntas, df_veios, df_veios_confinados = carregar_e_processar_dados(CAMINHO_CSV)
+
+        # --- VERIFICAÇÕES DE DADOS CARREGADOS ---
+        if df_completo.empty:
+            st.error("O DataFrame completo está vazio após o carregamento. Verifique o arquivo CSV e a função de processamento.")
+            st.stop()
+        if df_juntas.empty:
+            st.warning("O DataFrame de Juntas está vazio. Algumas análises podem não funcionar.")
+        if df_veios.empty:
+            st.warning("O DataFrame de Veios está vazio. Algumas análises podem não funcionar.")
+        if df_veios_confinados.empty:
+            st.warning("O DataFrame de Veios Confinados está vazio. Algumas análises podem não funcionar.")
+
+        # Armazena os DataFrames no session_state
+        st.session_state['df_completo'] = df_completo
+        st.session_state['df_juntas'] = df_juntas
+        st.session_state['df_veios'] = df_veios
+        st.session_state['df_veios_confinados'] = df_veios_confinados
+
+        st.success("Dados carregados e processados com sucesso!")
+
+    except FileNotFoundError:
+        st.error(f"Erro: O arquivo de dados '{CAMINHO_CSV}' não foi encontrado. Por favor, verifique o caminho.")
+        st.stop() # Interrompe a execução do app
+    except Exception as e:
+        st.error(f"Erro inesperado ao carregar os dados: {e}. Por favor, verifique o arquivo CSV e a função de processamento.")
+        st.stop() # Interrompe a execução do app
+
+# Recupera os DataFrames do session_state (agora garantidos de existirem)
+df_completo = st.session_state['df_completo']
+df_juntas = st.session_state['df_juntas']
+df_veios = st.session_state['df_veios']
+df_veios_confinados = st.session_state['df_veios_confinados']
+
 
 # -----------------------------------------------------------------
 # 4 – OPÇÕES PARA SELETORES (calculadas uma vez e armazenadas no session_state)
 # -----------------------------------------------------------------
+
+# Litofacies
 litofacies_opcoes = ['Todas as Litofacies', 'LMC+LMT+MUD']
-if 'Litofacies' in df_veios_confinados.columns:
+if 'Litofacies' in df_veios_confinados.columns and not df_veios_confinados.empty:
     litofacies_unicas = sorted(df_veios_confinados['Litofacies'].dropna().unique().tolist())
     litofacies_opcoes += litofacies_unicas
 st.session_state.litofacies_opcoes = litofacies_opcoes
 
+# Camadas
 ordem_desejada_camadas = [
     'BEIRA_MAR_INFERIOR', 'FILHOTE', 'BEIRA_LAGO', 'BEIRA_RIO',
     'PELE_4', 'PELE_3', 'PELE_2', 'PELE_1',
@@ -204,23 +212,30 @@ ordem_desejada_camadas = [
     'MARADONA', 'LEIOLITO', 'UFC_Carbonato',
     'PLANAR', 'COLCHETE', 'GRETA_II', 'GRETA_I',
     'DUMOUND', 'MRG_AT_Gerson','SIM1','SIM2','SIM3','SIM4',
-    'SRM1','SRM2','SRM3','SRM4','SRM5','SRM6','SRM7' # Adicionado do seu input
+    'SRM1','SRM2','SRM3','SRM4','SRM5','SRM6','SRM7'
 ]
 camadas_opcoes = ['Todas as Camadas']
-if 'Camada' in df_completo.columns:
+if 'Camada' in df_completo.columns and not df_completo.empty:
     camadas_unicas = df_completo['Camada'].dropna().unique().tolist()
     camadas_ordenadas = [c for c in ordem_desejada_camadas if c in camadas_unicas]
     camadas_nao_ordenadas = sorted(set(camadas_unicas) - set(ordem_desejada_camadas))
     camadas_opcoes += camadas_ordenadas + camadas_nao_ordenadas
 st.session_state.camadas_opcoes = camadas_opcoes
 
+# Afloramentos
 afloramentos_ordem = [
     'VINUALES', 'PONTE', 'HOTEL_DEL_DIQUE', 'CEDAMAVI', 'CEDAMAVI_ESP',
     'ZORRO', 'LALULA', 'GAUCHITO_GIL', 'LOMITO', 'ABLOME_ESP', 'ABLOME',
     'ABLOME_COSTAS', 'BIV', 'DIQUE_COMPENSADOR', 'BODEGUITA'
 ]
-afloramentos_opcoes = ['Todos'] + [a for a in afloramentos_ordem if a in df_completo['Afloramento'].dropna().unique()]
+afloramentos_opcoes = ['Todos']
+if 'Afloramento' in df_completo.columns and not df_completo.empty:
+    afloramentos_unicos = df_completo['Afloramento'].dropna().unique().tolist()
+    afloramentos_ordenados = [a for a in afloramentos_ordem if a in afloramentos_unicos]
+    afloramentos_nao_ordenados = sorted(set(afloramentos_unicos) - set(afloramentos_ordem))
+    afloramentos_opcoes += afloramentos_ordenados + afloramentos_nao_ordenados
 st.session_state.afloramentos_opcoes = afloramentos_opcoes
+
 
 # Fim do app.py. O conteúdo das seções agora está nas páginas.
 
@@ -255,9 +270,8 @@ st.markdown("""
     <td style="border:none;"><b>Alexandre Berner (AGUP/RES-EE/CT/GGER)<b></td>
   </tr>
   <tr>
-    <td style="border:none;"><b>Antônio de Pádua Cunha Pires Filho (EXP/GEO/TGEO/STGEO)<b></td>
+    <td style="border:none;"><b>Antônio de Pádua Cunha Pires Filho (EXP/GEO/TGEO/STGEO)</b></td>
     <td style="border:none;"><b>George de Barros(CENPES/PDIEP/GEO/CGM)<b></td>
   </tr>
 </table>
 """, unsafe_allow_html=True)
-    

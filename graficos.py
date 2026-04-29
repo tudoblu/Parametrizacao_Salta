@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-
-# ==============================================================
-#  GRAFICOS.PY – Funções de Plotagem para o Dashboard
-# ==============================================================
-
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
@@ -16,7 +11,9 @@ import pingouin as pg
 from scipy import stats
 import mplstereonet # Para estereogramas
 import streamlit as st
-
+# ==============================================================
+#  GRAFICOS.PY – Funções de Plotagem para o Dashboard
+# ==============================================================
 
 # --- Listas de ordem desejada para Afloramento e Camada ---
 afloramentos_ordem = [

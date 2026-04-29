@@ -112,7 +112,7 @@ def carregar_e_processar_dados(caminho_arquivo: str):
         'Espessura_da_camada': 'Espessura da camada',
         'Altura_da_estrutura': 'Altura da estrutura',
         'Surf_Dir': 'Surf Dir',
-        'Strike_RHR': 'Strike_RHR'
+        'Strike_RHR': 'DipDir'
     }
     df.rename(columns=col_mapping, inplace=True)
 

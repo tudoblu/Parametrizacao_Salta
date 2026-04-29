@@ -16,7 +16,7 @@ import pingouin as pg
 from scipy import stats
 import mplstereonet # Para estereogramas
 import streamlit as st
-
+from scipy.interpolate import make_interp_spline # Import adicionado para P21
 
 # --- Listas de ordem desejada para Afloramento e Camada ---
 afloramentos_ordem = [
@@ -892,111 +892,132 @@ def grafico_scanlines(df_original, afloramento_selecionado, camada_selecionada):
         'SET9':             'magenta',
         'SET10':            'lime',
         'Não Subordinada':  'darkgreen',
-        'NaN':              'gray',
+        'NaN':              'gray' # Para valores NaN
     }
 
     # ------------------------------------------------------------------
-    # Fraturas
-    # DipDir é azimute geográfico → mesma conversão que a scanline
+    # Plotagem das fraturas
     # ------------------------------------------------------------------
-    labels_ja_adicionados = set()
-    current_dist = 0.0
-
-    for _, row in df_sel.iterrows():
-        espac = row['Espacamento']
-        if pd.isna(espac):
+    pos_atual = 0.0
+    for idx, row in df_sel.iterrows():
+        espacamento = row['Espacamento']
+        if pd.isna(espacamento):
             continue
 
-        # Posição da fratura ao longo da scanline
-        x_pos = x0 + current_dist * np.cos(scan_rad)
-        y_pos = y0 + current_dist * np.sin(scan_rad)
+        pos_fratura = pos_atual + espacamento
+        x_fratura = x0 + pos_fratura * np.cos(scan_rad)
+        y_fratura = y0 + pos_fratura * np.sin(scan_rad)
 
-        dip_geo = pd.to_numeric(row['DipDir'],              errors='coerce')
-        altura  = pd.to_numeric(row['Altura da estrutura'], errors='coerce')
-        frat    = str(row['FRAT SET']) if pd.notna(row['FRAT SET']) else 'NaN'
+        dip = row['Dip']
+        dipdir = row['DipDir']
+        altura = row['Altura da estrutura']
+        frat_set = str(row['FRAT SET']) if pd.notna(row['FRAT SET']) else 'NaN'
 
-        if pd.notna(dip_geo) and pd.notna(altura) and altura > 0:
-            # Converte DipDir (azimute geográfico) para ângulo matemático
-            strike_geo = (dip_geo + 90.0) % 360.0          # strike = DipDir + 90°
-            dip_rad    = np.deg2rad((90.0 - strike_geo) % 360.0)  # converte para ângulo matemático
-            meio    = altura / 2.0
-            cor     = cores_frat.get(frat, 'gray')
-            label   = frat if frat not in labels_ja_adicionados else None
-            labels_ja_adicionados.add(frat)
+        # Cor da fratura
+        cor = cores_frat.get(frat_set, 'black')
 
-            # Segmento da fratura centrado no ponto de interseção com a scanline
-            x_f = [x_pos - meio * np.cos(dip_rad), x_pos + meio * np.cos(dip_rad)]
-            y_f = [y_pos - meio * np.sin(dip_rad), y_pos + meio * np.sin(dip_rad)]
-            ax.plot(x_f, y_f, color=cor, lw=1, label=label)
+        # Desenha a fratura
+        if pd.notna(dip) and pd.notna(dipdir) and pd.notna(altura) and altura > 0:
+            # Converte dip e dipdir para o sistema de coordenadas do plot
+            # dipdir é azimute geográfico (N=0, E=90, S=180, W=270)
+            # Para plotar, precisamos de um ângulo em relação ao eixo X positivo (Leste)
+            # e que cresça no sentido anti-horário.
+            # Azimute geográfico para ângulo matemático: (90 - azimute) % 360
+            # A direção do mergulho é perpendicular ao strike.
+            # O strike é dipdir - 90 ou dipdir + 90.
+            # Para desenhar a linha da fratura, usamos o strike.
+            strike_geo = (dipdir - 90) % 360 # Strike Right Hand Rule
+            strike_rad = np.deg2rad((90 - strike_geo) % 360)
 
-        current_dist += espac  # avança sempre, com ou sem fratura válida
+            # Comprimento da linha da fratura no plot (proporcional à altura)
+            # Ajuste o fator de escala conforme necessário
+            len_fratura = altura * 0.1 # Fator de escala para visualização
+
+            x_start = x_fratura - len_fratura / 2 * np.cos(strike_rad)
+            y_start = y_fratura - len_fratura / 2 * np.sin(strike_rad)
+            x_end   = x_fratura + len_fratura / 2 * np.cos(strike_rad)
+            y_end   = y_fratura + len_fratura / 2 * np.sin(strike_rad)
+
+            ax.plot([x_start, x_end], [y_start, y_end], color=cor, lw=2)
+
+        pos_atual = pos_fratura
 
     # ------------------------------------------------------------------
-    # Formatação final
+    # Configurações finais do plot
     # ------------------------------------------------------------------
-    ax.set_aspect('equal')
-    ax.set_xlabel('X (cm)', fontsize=10)
-    ax.set_ylabel('Y (cm)', fontsize=10)
-    ax.set_title(
-        f"Scanline – Camada: {camada_selecionada}\n"
-        f"Afloramento: {afloramento_selecionado}  |  "
-        f"Surf Dir: {scan_az_geo:.1f}°",
-        loc='left', fontsize=11
-    )
+    ax.set_aspect('equal', adjustable='box')
+    ax.set_title(f'Scanline: {afloramento_selecionado} - {camada_selecionada}\nComprimento: {comprimento:.2f} m')
+    ax.set_xlabel('X (m)')
+    ax.set_ylabel('Y (m)')
+    ax.grid(True, linestyle='--', alpha=0.6)
 
-    handles, labels_leg = ax.get_legend_handles_labels()
-    uniq = dict(zip(labels_leg, handles))
-    ax.legend(
-        uniq.values(), uniq.keys(),
-        loc='best', fontsize=8,
-        title="Tipo de fratura",
-        title_fontsize=9
-    )
-    ax.grid(True, alpha=0.4)
+    # Legenda
+    legend_elements = [
+        mlines.Line2D([0], [0], color='blue', lw=2, label='Scanline'),
+        mlines.Line2D([0], [0], color='green', lw=1.5, linestyle='--', label='Topo/Base da Camada')
+    ]
+    for frat_set, cor in cores_frat.items():
+        if frat_set != 'NaN': # Não adiciona NaN à legenda explícita
+            legend_elements.append(mlines.Line2D([0], [0], color=cor, lw=2, label=f'Fratura {frat_set}'))
+    ax.legend(handles=legend_elements, loc='upper left', bbox_to_anchor=(1, 1))
+
     plt.tight_layout()
+    return fig, comprimento
 
-    return fig, df_sel
-
-
-# ---- 2.10 – Estereograma de Polos e Diagrama de Rosetas (COMBINADO) ----
+# ---- 2.10 – Estereogramas e Rosetas ----
 def plotar_estereograma_e_rose(df_juntas, df_veios, afloramento_selecionado, camada_selecionada):
     """
-    Gera um estereograma de polos e um diagrama de rosê combinados em uma única figura.
-    Filtra os dados por afloramento e camada.
+    Plota estereogramas de polos e diagramas de roseta para juntas e veios,
+    com filtros de afloramento e camada.
     """
-    sns.set_style("whitegrid")
-    fig = plt.figure(figsize=(10, 6)) # Aumenta o tamanho para acomodar dois plots
+    plt.style.use('seaborn-v0_8-darkgrid')
+    fig = plt.figure(figsize=(16, 8))
 
-    # --- 1) Estereograma de Polos ---
-    ax_stereo = fig.add_subplot(121, projection='stereonet') # 1 linha, 2 colunas, 1º plot
-
-    # Filtrar dados
-    df_juntas_filtered = df_juntas.copy()
-    df_veios_filtered = df_veios.copy()
+    # --- Filtra os DataFrames ---
+    df_final_juntas = df_juntas.copy()
+    df_final_veios = df_veios.copy()
 
     if afloramento_selecionado != 'Todos':
-        df_juntas_filtered = df_juntas_filtered[df_juntas_filtered['Afloramento'] == afloramento_selecionado]
-        df_veios_filtered = df_veios_filtered[df_veios_filtered['Afloramento'] == afloramento_selecionado]
+        df_final_juntas = df_final_juntas[df_final_juntas['Afloramento'] == afloramento_selecionado]
+        df_final_veios = df_final_veios[df_final_veios['Afloramento'] == afloramento_selecionado]
 
     if camada_selecionada != 'Todas as Camadas':
-        df_juntas_filtered = df_juntas_filtered[df_juntas_filtered['Camada'] == camada_selecionada]
-        df_veios_filtered = df_veios_filtered[df_veios_filtered['Camada'] == camada_selecionada]
+        df_final_juntas = df_final_juntas[df_final_juntas['Camada'] == camada_selecionada]
+        df_final_veios = df_final_veios[df_final_veios['Camada'] == camada_selecionada]
 
-    # Remover NaNs para Dip e Strike_RHR
-    df_final_juntas = df_juntas_filtered.dropna(subset=['Dip', 'Strike_RHR'])
-    df_final_veios = df_veios_filtered.dropna(subset=['Dip', 'Strike_RHR'])
+    # Garante que as colunas 'Strike_RHR' e 'Dip' são numéricas e remove NaNs
+    for df in [df_final_juntas, df_final_veios]:
+        if 'Strike_RHR' in df.columns:
+            df['Strike_RHR'] = pd.to_numeric(df['Strike_RHR'], errors='coerce')
+        if 'Dip' in df.columns:
+            df['Dip'] = pd.to_numeric(df['Dip'], errors='coerce')
+
+    df_final_juntas = df_final_juntas.dropna(subset=['Strike_RHR', 'Dip'])
+    df_final_veios = df_final_veios.dropna(subset=['Strike_RHR', 'Dip'])
 
     num_medidas_juntas = len(df_final_juntas)
     num_medidas_veios = len(df_final_veios)
     num_medidas_total = num_medidas_juntas + num_medidas_veios
 
+    # --- INÍCIO DA CORREÇÃO: MOVER A CONCATENAÇÃO PARA CÁ ---
+    # Inicializa as variáveis para evitar UnboundLocalError
+    all_strikes_for_density = pd.Series(dtype=float)
+    all_dips_for_density = pd.Series(dtype=float)
+
+    if not df_final_juntas.empty:
+        all_strikes_for_density = pd.concat([all_strikes_for_density, df_final_juntas['Strike_RHR']])
+        all_dips_for_density = pd.concat([all_dips_for_density, df_final_juntas['Dip']])
+    if not df_final_veios.empty:
+        all_strikes_for_density = pd.concat([all_strikes_for_density, df_final_veios['Strike_RHR']])
+        all_dips_for_density = pd.concat([all_dips_for_density, df_final_veios['Dip']])
+    # --- FIM DA CORREÇÃO ---
+
     if num_medidas_total == 0:
+        fig, (ax_stereo, ax_rose) = plt.subplots(1, 2, figsize=(16, 8))
         ax_stereo.text(0.5, 0.5, "Nenhum dado válido para estereograma.",
                        transform=ax_stereo.transAxes, ha='center', va='center', fontsize=12, color='red')
         ax_stereo.set_title(f"Estereograma de Polos para {afloramento_selecionado}, {camada_selecionada}")
         ax_stereo.grid(True)
-        # Configura o ax_rose também para não mostrar nada
-        ax_rose = fig.add_subplot(122, projection='polar')
         ax_rose.text(0.5, 0.5, "Nenhum dado válido para diagrama de roseta.",
                      transform=ax_rose.transAxes, ha='center', va='center', fontsize=12, color='red')
         ax_rose.set_xticks([])
@@ -1005,20 +1026,20 @@ def plotar_estereograma_e_rose(df_juntas, df_veios, afloramento_selecionado, cam
         plt.tight_layout()
         return fig
 
-    # Contorno de densidade (combinando juntas e veios)
-    min_density_level = 2 # Nível mínimo de densidade em % para começar a colorir
-    levels = np.arange(min_density_level, 100, 1) # Começa de 10% e vai de 2 em 2 até 100%
-    st.write("DEBUG: Tipo de all_strikes_for_density:", type(all_strikes_for_density))
-    st.write("DEBUG: Dtype de all_strikes_for_density:", all_strikes_for_density.dtype)
-    st.write("DEBUG: Tem NaN em all_strikes_for_density?", all_strikes_for_density.isnull().any())
-    st.write("DEBUG: Tipo de all_dips_for_density:", type(all_dips_for_density))
-    st.write("DEBUG: Dtype de all_dips_for_density:", all_dips_for_density.dtype)
-    st.write("DEBUG: Tem NaN em all_dips_for_density?", all_dips_for_density.isnull().any())
+    # --- Estereograma ---
+    ax_stereo = fig.add_subplot(121, projection='stereonet')
 
-    
-    
-    all_strikes_for_density = pd.concat([df_final_juntas['Strike_RHR'], df_final_veios['Strike_RHR']])
-    all_dips_for_density    = pd.concat([df_final_juntas['Dip'],        df_final_veios['Dip']])
+    # Calcula os níveis de contorno de densidade
+    # Aumenta o número de bins para uma estimativa de densidade mais suave
+    density = mplstereonet.density_contour(all_strikes_for_density, all_dips_for_density,
+                                            measurement='poles', bins=50)
+    # Normaliza a densidade para 0-100% e define os níveis
+    max_density = density.max()
+    if max_density > 0:
+        levels = np.arange(0, 101, 2) # Vai de 0 a 100% de 2 em 2
+        levels = levels[levels <= max_density / max_density * 100] # Ajusta para o max real
+    else:
+        levels = [] # Sem contornos se não houver densidade
 
     if not all_strikes_for_density.empty:
         cax = ax_stereo.density_contourf(all_strikes_for_density,
@@ -1028,266 +1049,56 @@ def plotar_estereograma_e_rose(df_juntas, df_veios, afloramento_selecionado, cam
                                          levels=levels)
         fig.colorbar(cax, ax=ax_stereo, label='Densidade (%)')
 
-    # Plotar polos e planos de JUNTAS
-    if num_medidas_juntas > 0:
-        ax_stereo.pole(df_final_juntas['Strike_RHR'],
-                       df_final_juntas['Dip'],
-                       'o', markersize=5, color='black', alpha=0.7,
-                        label='_nolegend_') # Esconde da legenda automática
-                       #label=f'JUNTA ({num_medidas_juntas})')
-        ax_stereo.plane(df_final_juntas['Strike_RHR'], # Comentado para evitar poluição visual
-                        df_final_juntas['Dip'],
-                        color='green', alpha=0.3,linestyle='--',
-                        label='_nolegend_')
+    # Plota os polos individuais (opcional, pode ser muito denso)
+    # ax_stereo.pole(all_strikes_for_density, all_dips_for_density, 'o', color='gray', markersize=2, alpha=0.5)
 
-    # Plotar polos e planos de VEIOS
-    if num_medidas_veios > 0:
-        ax_stereo.pole(df_final_veios['Strike_RHR'],
-                       df_final_veios['Dip'],
-                       's', markersize=5, color='red', alpha=0.7,
-                       label='_nolegend_') # Esconde da legenda automática
-                       #label=f'VEIO ({num_medidas_veios})')
-        # Adicionando os planos para os VEIOS
-        ax_stereo.plane(df_final_veios['Strike_RHR'],
-                       df_final_veios['Dip'],
-                       color='blue', alpha=0.3, linestyle='-',
-                       label='_nolegend_') # Esconde da legenda automática
-                       #label='Plano de Veio') # Adicionei um label para a legenda
-        
+    ax_stereo.set_title(f"Estereograma de Polos para {afloramento_selecionado}, {camada_selecionada}")
     ax_stereo.grid(True)
-    # --- Criação manual da legenda para evitar entradas duplicadas ---
-    legend_elements = []
-    
-    # Legenda para JUNTAS
-    if num_medidas_juntas > 0:
-        legend_elements.append(mlines.Line2D([], [], marker='o', color='black', markersize=5, alpha=0.7, linestyle='None', label=f'Polo de JUNTA ({num_medidas_juntas})'))
-        legend_elements.append(mlines.Line2D([], [], color='green', lw=2, linestyle='--', alpha=0.3, label='Plano de JUNTA'))
-        
-    # Legenda para VEIOS
-    if num_medidas_veios > 0:
-        legend_elements.append(mlines.Line2D([], [], marker='s', color='red', markersize=5, alpha=0.7, linestyle='None', label=f'Polo de VEIO ({num_medidas_veios})'))
-        legend_elements.append(mlines.Line2D([], [], color='blue', lw=2, linestyle='-', alpha=0.3, label='Plano de VEIO'))
-        
-    # Adiciona a legenda ao estereograma
-    ax_stereo.legend(handles=legend_elements, bbox_to_anchor=(1.05, -0.1), loc='lower right', borderaxespad=0.)
-    title_stereo = (f'Afloramento: {afloramento_selecionado}, Camada: {camada_selecionada}\n'
-                    f'(Strike calculado via RHR) - Total de Medidas: {num_medidas_total}\n'
-                    f'Contorno de densidade > {min_density_level}%')
-    ax_stereo.set_title(title_stereo)
 
-    # --- 2) Diagrama de Rosetas (polar) ---
+    # --- Diagrama de Roseta ---
     ax_rose = fig.add_subplot(122, projection='polar')
 
-    all_strikes_for_rose = pd.concat([
-        df_final_juntas['Strike_RHR'],
-        df_final_veios['Strike_RHR']
-    ]).values
+    # Concatena os strikes para o diagrama de roseta
+    all_strikes_for_rose = pd.Series(dtype=float)
+    if not df_final_juntas.empty:
+        all_strikes_for_rose = pd.concat([all_strikes_for_rose, df_final_juntas['Strike_RHR']])
+    if not df_final_veios.empty:
+        all_strikes_for_rose = pd.concat([all_strikes_for_rose, df_final_veios['Strike_RHR']])
 
-    if len(all_strikes_for_rose) > 0:
+    if not all_strikes_for_rose.empty:
+        # Normaliza os strikes para 0-180 para roseta de direção
+        # ou usa 0-360 se for importante a direção exata
+        # Para roseta de direção (strike), geralmente se usa 0-180
+        strikes_normalized = all_strikes_for_rose % 180
 
-        # ── Espelhamento: duplica cada strike adicionando 180° ──────────────
-        # Fundamento geológico: strike 30° == strike 210° (plano não tem sentido)
-        strikes_espelhados = np.concatenate([
-            all_strikes_for_rose,
-            all_strikes_for_rose + 180
-        ]) % 360  # mantém tudo dentro de [0°, 360°)
+        # Converte para radianos para o plot polar
+        bins = np.deg2rad(np.arange(0, 181, 10)) # Bins de 10 graus
+        hist, bin_edges = np.histogram(strikes_normalized, bins=bins)
 
-        # ── Bins de 10° cobrindo 360° ────────────────────────────────────────
-        bin_edges = np.arange(0, 361, 10)
-        hist, _ = np.histogram(strikes_espelhados, bins=bin_edges)
+        # Ajusta os bins para que o centro da barra esteja na direção correta
+        bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
 
-        # Divide por 2: cada fratura foi contada duas vezes (original + espelho)
-        hist = hist / 2.0
+        # Plota as barras
+        ax_rose.bar(bin_centers, hist, width=np.deg2rad(10), bottom=0.0, color='skyblue', edgecolor='black')
 
-        # ── Posição angular e largura de cada barra ──────────────────────────
-        theta = np.deg2rad(bin_edges[:-1] + 5)  # centro de cada bin de 10°
-        width = np.deg2rad(10)                   # largura fixa de 10°
-
-        # ── Plota as barras ──────────────────────────────────────────────────
-        ax_rose.bar(
-            theta, hist,
-            width=width,
-            bottom=0.0,
-            edgecolor='k',
-            linewidth=0.5,
-            facecolor='steelblue',
-            alpha=0.8
-        )
-
-        # ── Configura orientação geológica ───────────────────────────────────
-        ax_rose.set_theta_zero_location('N')  # 0° = Norte, no topo
-        ax_rose.set_theta_direction(-1)       # sentido horário
-
-        # Rótulos angulares a cada 30°
-        ax_rose.set_thetagrids(
-            np.arange(0, 360, 30),
-            labels=[f'{a}°' for a in np.arange(0, 360, 30)]
-        )
-
-        # Grade radial dinâmica (até 4 níveis)
-        max_freq = hist.max()
-        if max_freq > 0:
-            passo = max(1, int(max_freq / 4))
-            ax_rose.set_rgrids(
-                np.arange(passo, max_freq + passo, passo),
-                angle=0,
-                weight='black'
-            )
-        else:
-            ax_rose.set_rgrids([])
-
-        ax_rose.set_title(
-            f'Diagrama de Rosetas (Strikes)\nTotal de medidas: {len(all_strikes_for_rose)}',
-            y=1.10, fontsize=12
-        )
-
+        ax_rose.set_theta_zero_location('N') # Norte no topo
+        ax_rose.set_theta_direction(-1)     # Sentido horário
+        ax_rose.set_title('Diagrama de Rosetas')
+        ax_rose.set_xticks(np.deg2rad(np.arange(0, 360, 30)))
+        ax_rose.set_xticklabels(['N', '30', '60', 'E', '120', '150', 'S', '210', '240', 'W', '300', '330'])
+        ax_rose.set_yticks([]) # Remove os ticks radiais
     else:
-        ax_rose.set_title(
-            'Nenhum dado de Strike para o Diagrama de Rosetas',
-            y=1.10, fontsize=12
-        )
+        ax_rose.text(0.5, 0.5, "Nenhum dado válido para diagrama de roseta.",
+                     transform=ax_rose.transAxes, ha='center', va='center', fontsize=12, color='red')
         ax_rose.set_xticks([])
         ax_rose.set_yticks([])
+        ax_rose.set_title('Diagrama de Rosetas')
 
 
-    fig.subplots_adjust(left=0.05, right=0.95, top=0.9,
-                        bottom=0.1, wspace=0.3)
-
+    plt.tight_layout()
     return fig
 
-# ---- 2.11 – Scatter Plot com Regressão ----
-def grafico_scatter_relacoes(df_original, camada, litotipos, x_col, y_col, log_x, log_y, reg_type):
-    """
-    Gera um scatter plot com opção de regressão linear, filtrado por camada e litotipos.
-    Retorna a figura e o DataFrame filtrado usado para o plot.
-    """
-    sns.set(style="whitegrid")
-    fig, ax = plt.subplots(figsize=(10, 6))
-
-    df_filtered = df_original.copy()
-
-    # Filtro por camada
-    if camada != 'Todas as Camadas':
-        df_filtered = df_filtered[df_filtered['Camada'] == camada]
-
-    # Filtro por litotipos
-    if 'Todas as Litofacies' not in litotipos:
-        if 'LMC+LMT+MUD' in litotipos:
-            df_filtered = df_filtered[df_filtered['Litofacies'].isin(['LMC', 'LMT', 'MUD'])]
-        else:
-            df_filtered = df_filtered[df_filtered['Litofacies'].isin(litotipos)]
-
-    # Remover NaNs para as colunas selecionadas
-    df_filtered = df_filtered.dropna(subset=[x_col, y_col])
-
-    if df_filtered.empty:
-        ax.text(0.5, 0.5, "Nenhum dado disponível para os filtros selecionados.",
-                ha='center', va='center', fontsize=12, color='red')
-        ax.axis('off')
-        return fig, pd.DataFrame()
-
-    # Plotar scatter
-    sns.scatterplot(data=df_filtered, x=x_col, y=y_col, ax=ax, alpha=0.7)
-
-    # Regressão linear
-    if reg_type == "Linear":
-        # Calcula a regressão linear
-        slope, intercept, r_value, p_value, std_err = stats.linregress(df_filtered[x_col], df_filtered[y_col])
-        x_line = np.array([df_filtered[x_col].min(), df_filtered[x_col].max()])
-        y_line = slope * x_line + intercept
-        ax.plot(x_line, y_line, color='red', linestyle='--',
-                label=f'Regressão Linear\n(R²={r_value**2:.2f}, p={p_value:.3f})')
-        ax.legend()
-
-    # Escalas logarítmicas
-    if log_x:
-        ax.set_xscale('log')
-    if log_y:
-        ax.set_yscale('log')
-
-    ax.set_title(f'Relação entre {x_col} e {y_col}')
-    ax.set_xlabel(x_col)
-    ax.set_ylabel(y_col)
-    plt.tight_layout()
-
-    return fig, df_filtered
-
-# ---- 2.12 – Heatmap de Correlação Spearman ----
-def grafico_spearman_heatmap(df_original, camada, litotipos):
-    """
-    Gera um heatmap de correlação de Spearman para colunas numéricas,
-    filtrado por camada e litotipos.
-    Retorna a figura e o DataFrame de correlações do Pingouin.
-    """
-    sns.set(style="white")
-    fig, ax = plt.subplots(figsize=(12, 10))
-
-    df_filtered = df_original.copy()
-
-    # Filtro por camada
-    if camada != 'Todas as Camadas':
-        df_filtered = df_filtered[df_filtered['Camada'] == camada]
-
-    # Filtro por litotipos
-    if 'Todas as Litofacies' not in litotipos:
-        if 'LMC+LMT+MUD' in litotipos:
-            df_filtered = df_filtered[df_filtered['Litofacies'].isin(['LMC', 'LMT', 'MUD'])]
-        else:
-            df_filtered = df_filtered[df_filtered['Litofacies'].isin(litotipos)]
-
-    # Selecionar apenas colunas numéricas para a correlação
-    numeric_cols = df_filtered.select_dtypes(include=np.number).columns.tolist()
-    df_numeric = df_filtered[numeric_cols].dropna()
-
-    if df_numeric.empty or len(df_numeric.columns) < 2:
-        ax.text(0.5, 0.5, "Nenhum dado numérico suficiente para calcular a correlação.",
-                ha='center', va='center', fontsize=12, color='red')
-        ax.axis('off')
-        return fig, None
-
-    # Calcular correlação de Spearman usando pingouin
-    corr_spearman = pg.rcorr(df_numeric, method='spearman', stars=False, decimals=2)['r']
-
-    sns.heatmap(corr_spearman, annot=True, cmap='coolwarm', fmt=".2f", linewidths=.5, ax=ax)
-    ax.set_title(f'Heatmap de Correlação de Spearman\nCamada: {camada}, Litotipos: {", ".join(litotipos)}')
-    plt.tight_layout()
-
-    return fig, corr_spearman # Retorna a figura e o DataFrame de correlações
-    
-# ---- 2.9 – P21 por Afloramento (com filtro de Camada) ----
-def plotar_p21_por_afloramento(df_original, camada_selecionada):
-    """
-    Gera o gráfico de P21 por Afloramento, filtrado por camada.
-    Baseado no notebook '15_02_2026_Scanlines_total_medidas_area_com_P20_P21.ipynb'.
-    """
-    plt.style.use('seaborn-v0_8-darkgrid')
-
-    # --- DEBUG 1 ---
-    st.write("DEBUG 1: Tipo de df_original na entrada da função:", type(df_original))
-    st.write("DEBUG 1: Colunas de df_original:", df_original.columns.tolist())
-    # ---------------
-
-    df = df_original.copy()
-
-    # --- DEBUG 2 ---
-    st.write("DEBUG 2: Tipo de df após .copy():", type(df))
-    st.write("DEBUG 2: Colunas de df após .copy():", df.columns.tolist())
-    # ---------------
-
-    for col in ['Espacamento', 'Espessura da camada', 'Altura da estrutura']:
-        if col not in df.columns:
-            fig, ax = plt.subplots(figsize=(10, 6))
-            ax.text(0.5, 0.5, f"Erro: Coluna '{col}' não encontrada no DataFrame.",
-                    ha='center', va='center', fontsize=12, color='red')
-            ax.axis('off')
-            return fig
-        df[col] = pd.to_numeric(df[col], errors='coerce')
-
-    # --- DEBUG 3 ---
-    st.write("DEBUG 3: Tipo de df antes de dropna():", type(df))
-    st.write("DEBUG 3: Colunas de df antes de dropna():", df.columns.tolist())
-    # ---------------
-
+# ---- 2.11 – P21 por Afloramento (com filtro de Camada) ----
 def plotar_p21_por_afloramento(df_original, camada_selecionada):
     """
     Gera o gráfico de P21 por Afloramento, filtrado por camada.
@@ -1296,7 +1107,6 @@ def plotar_p21_por_afloramento(df_original, camada_selecionada):
     plt.style.use('seaborn-v0_8-darkgrid')
 
     df = df_original.copy()
-
     for col in ['Espacamento', 'Espessura da camada', 'Altura da estrutura']:
         if col not in df.columns:
             fig, ax = plt.subplots(figsize=(10, 6))
@@ -1307,11 +1117,15 @@ def plotar_p21_por_afloramento(df_original, camada_selecionada):
         df[col] = pd.to_numeric(df[col], errors='coerce')
 
     df = df.dropna(how='all')
-    df = df[df['Altura da estrutura'] <= 300] # Filtro de altura
+    df = df[df['Altura da estrutura'] <= 300]
 
-    # Realiza os cálculos diretamente no agrupamento
+    # Adiciona a coluna 'Litofacies' ao agrupamento se existir
+    group_cols = ['Afloramento', 'Camada']
+    if 'Litofacies' in df.columns:
+        group_cols.append('Litofacies')
+
     resultado = (
-        df.groupby(['Afloramento', 'Camada', 'Litofacies'])
+        df.groupby(group_cols)
         .agg(
             Espessura_Media_Camada=('Espessura da camada', 'mean'),
             Comprimento_Scanline=('Espacamento', 'sum'),
@@ -1321,22 +1135,14 @@ def plotar_p21_por_afloramento(df_original, camada_selecionada):
         .reset_index()
     )
 
-    # Calcula a área da scanline diretamente no DataFrame agregado
     resultado['Area_Scanline'] = (
         (resultado['Comprimento_Scanline'] / 100) * (resultado['Espessura_Media_Camada'] / 100)
     )
-    # Calcula P21
     resultado['P21'] = (resultado['Altura_Total_Fraturas'] / 100) / resultado['Area_Scanline']
     resultado['Altura_Total_Fraturas'] = resultado['Altura_Total_Fraturas'] / 100
 
-    # Filtrar os dados com base na camada selecionada
-    if camada_selecionada != "Todas as Camadas":
-        dados_filtrados = resultado[resultado['Camada'] == camada_selecionada].copy()
-    else:
-        dados_filtrados = resultado.copy()
-
     # Remover NaNs que podem ter surgido em P21 devido a Area_Scanline ser 0 ou NaN
-    dados_filtrados = dados_filtrados.dropna(subset=['P21'])
+    dados_filtrados = resultado.dropna(subset=['P21'])
 
     if dados_filtrados.empty:
         fig, ax = plt.subplots(figsize=(10, 6))
@@ -1345,37 +1151,21 @@ def plotar_p21_por_afloramento(df_original, camada_selecionada):
         ax.axis('off')
         return fig
 
-    # --- CORREÇÃO CRÍTICA: GARANTIR QUE dados_filtrados É UM DATAFRAME AQUI ---
-    # Isso deve ser feito imediatamente antes do groupby para evitar o erro.
-    if not isinstance(dados_filtrados, pd.DataFrame):
-        # Tenta converter para DataFrame. Se falhar, retorna um gráfico de erro.
-        try:
-            # Se o array NumPy tiver colunas nomeadas (o que é improvável se virou array),
-            # você pode tentar pd.DataFrame(dados_filtrados, columns=colunas_originais)
-            # Mas, como vem de um DataFrame, a conversão simples deve funcionar.
-            dados_filtrados = pd.DataFrame(dados_filtrados)
-        except Exception as e:
-            fig, ax = plt.subplots(figsize=(10, 6))
-            ax.text(0.5, 0.5, f"Erro interno: Não foi possível converter dados para DataFrame antes do agrupamento. Detalhes: {e}",
-                    ha='center', va='center', fontsize=12, color='red')
-            ax.axis('off')
-            return fig
-    # --- FIM DA CORREÇÃO CRÍTICA ---
-
-        # Agrupar por Afloramento para o caso de "Todas as Camadas"
-        if camada_selecionada == "Todas as Camadas":
-            # --- DEBUG FINAL ---
-            st.write("DEBUG FINAL: Tipo de dados_filtrados ANTES do groupby:", type(dados_filtrados))
-            if isinstance(dados_filtrados, pd.DataFrame):
-                st.write("DEBUG FINAL: Colunas de dados_filtrados ANTES do groupby:", dados_filtrados.columns.tolist())
-            else:
-                st.error("DEBUG FINAL: dados_filtrados NÃO É UM DATAFRAME ANTES DO GROUPBY!")
-            # --- FIM DEBUG FINAL ---
-
+    # Filtrar os dados com base na camada selecionada
+    if camada_selecionada != "Todas as Camadas":
+        dados_filtrados = dados_filtrados[dados_filtrados['Camada'] == camada_selecionada].copy()
+        # Adicionar afloramentos ausentes com P21=0 para uma camada específica
+        afloramentos_existentes = dados_filtrados['Afloramento'].unique()
+        afloramentos_faltantes = [a for a in afloramentos_ordem if a not in afloramentos_existentes]
+        if afloramentos_faltantes:
+            df_faltantes = pd.DataFrame({'Afloramento': afloramentos_faltantes, 'P21': 0, 'Espessura_Media_Camada': np.nan, 'Litofacies': np.nan})
+            dados_filtrados = pd.concat([dados_filtrados, df_faltantes], ignore_index=True)
+    else:
+        # Se "Todas as Camadas", agrupar por Afloramento e somar P21
         dados_filtrados = dados_filtrados.groupby('Afloramento').agg(
-            P21=('P21', 'mean'), # Média de P21 por afloramento
-            Espessura_Media_Camada=('Espessura_Media_Camada', 'mean'), # Usar a coluna já agregada
-            Litofacies=('Litofacies', lambda x: ', '.join(x.unique().dropna().astype(str))) # Agrega litofacies
+            P21=('P21', 'sum'),
+            Espessura_Media_Camada=('Espessura_Media_Camada', 'mean'), # Média da espessura para todas as camadas do afloramento
+            Litofacies=('Litofacies', lambda x: ', '.join(x.dropna().unique())) # Agrupa litofacies
         ).reset_index()
 
         # Adicionar afloramentos ausentes com P21=0
@@ -1384,14 +1174,6 @@ def plotar_p21_por_afloramento(df_original, camada_selecionada):
         if afloramentos_faltantes:
             df_faltantes = pd.DataFrame({'Afloramento': afloramentos_faltantes, 'P21': 0, 'Espessura_Media_Camada': np.nan, 'Litofacies': np.nan})
             dados_filtrados = pd.concat([dados_filtrados, df_faltantes], ignore_index=True)
-    else:
-        # Adicionar afloramentos ausentes com P21=0 para uma camada específica
-        afloramentos_existentes = dados_filtrados['Afloramento'].unique()
-        afloramentos_faltantes = [a for a in afloramentos_ordem if a not in afloramentos_existentes]
-        if afloramentos_faltantes:
-            df_faltantes = pd.DataFrame({'Afloramento': afloramentos_faltantes, 'P21': 0, 'Espessura_Media_Camada': np.nan, 'Litofacies': np.nan})
-            dados_filtrados = pd.concat([dados_filtrados, df_faltantes], ignore_index=True)
-
 
     # Ordenar os dados com base na ordem desejada dos afloramentos
     dados_filtrados['Afloramento'] = pd.Categorical(
@@ -1560,7 +1342,7 @@ def plotar_p21_por_camada(df_original, afloramento_selecionado):
     ax.set_ylabel('Camadas (Espessura média - cm)')
     ax.set_title(f'P21 por Camada - Afloramento: {afloramento_selecionado}')
     plt.tight_layout()
-    return fig    
+    return fig
 
 # ---- 2.13 – Espessura x Espaçamento por Autor (Ji 2002) ----
 def grafico_espessura_espacamento_ji2002(df_ji, autor_selecionado):
@@ -1655,7 +1437,6 @@ def grafico_espessura_espacamento_ji2002(df_ji, autor_selecionado):
     plt.tight_layout()
 
     return fig
-
 
 def formatar_refs_abnt(df_ji):
     """
